@@ -314,6 +314,10 @@ The club is adding a new facility - a spa. We need to add it into the facilities
 insert into cd.facilities (facid, name, membercost, guestcost, initialoutlay, monthlymaintenance) 
 values (9, 'Spa', 20, 30, 100000, 800);
 ```
+or
+```sql
+insert into cd.facilities values (9, 'Spa', 20, 30, 100000, 800);
+```
 
 
 Question :   
@@ -323,11 +327,10 @@ In the previous exercise, you learned how to add a facility. Now you're going to
 
 ```sql
 insert into cd.facilities
-(facid, name, membercost, guestcost, initialoutlay, monthlymaintenance)
-values 
-(11, 'Spa 2', 20, 30, 100000, 800),
-(12, 'Squash Court 2', 3.5, 17.5, 5000, 80);
-INSERT 0 2
+    (facid, name, membercost, guestcost, initialoutlay, monthlymaintenance)
+    values
+        (9, 'Spa', 20, 30, 100000, 800),
+        (10, 'Squash Court 2', 3.5, 17.5, 5000, 80); 
 ```
 
 
@@ -335,6 +338,12 @@ Question :
 Let's try adding the spa to the facilities table again. This time, though, we want to automatically generate the value for the next facid, rather than specifying it as a constant. Use the following values for everything else:    
 `Name: 'Spa', membercost: 20, guestcost: 30, initialoutlay: 100000, monthlymaintenance: 800.`    
 
+```sql
+insert into cd.facilities
+    (facid, name, membercost, guestcost, initialoutlay, monthlymaintenance)
+    select (select max(facid) from cd.facilities)+1, 'Spa', 20, 30, 100000, 800;   
+```
+or
 ```sql
 insert into cd.facilities
 (facid, name, membercost, guestcost, initialoutlay, monthlymaintenance)
@@ -350,25 +359,41 @@ set
 initialoutlay = 10000
 where name = 'Tennis Court 2';
 ```
+or
+```sql
+update cd.facilities
+    set initialoutlay = 10000
+    where facid = 1; 
+```
 
 Question :   
 We want to increase the price of the tennis courts for both members and guests. Update the costs to be 6 for members, and 30 for guests.    
 ```sql
 update cd.facilities
 set
-(membercost = 6, guestcost = 30)
-where name like 'Tennis C%';
+membercost = 6, guestcost = 30
+where name like 'Tennis Court%';
 ```
 Alternatively I could use `facid in(0,1)`
 
 Question :   
 We want to alter the price of the second tennis court so that it costs 10% more than the first one. Try to do this without using constant values for the prices, so that we can reuse the statement if we want to.    
 ```sql
-update cd.facilities
-set 
-membercost = (select membercost from cd.facilities where facid = 0)*1.1,
-guestcost = (select guestcost from cd.facilities where facid = 0)*1,1
-where facilities.facid = 1;
+update cd.facilities facs
+    set
+        membercost = (select membercost * 1.1 from cd.facilities where facid = 0),
+        guestcost = (select guestcost * 1.1 from cd.facilities where facid = 0)
+    where facs.facid = 1; 
+```
+or,
+As the number of columns we want to update increases, standard SQL can start to get pretty awkward: you don't want to be specifying a separate subquery for each of 15 different column updates. Postgres provides a nonstandard extension to SQL called UPDATE...FROM that addresses this: it allows you to supply a FROM clause to generate values for use in the SET clause. Example below:
+```sql
+update cd.facilities facs
+    set
+        membercost = facs2.membercost * 1.1,
+        guestcost = facs2.guestcost * 1.1
+    from (select * from cd.facilities where facid = 0) facs2
+    where facs.facid = 1;
 ```
 
 Question :    
@@ -376,19 +401,24 @@ As part of a clearout of our database, we want to delete all bookings from the c
 ```sql
 delete from cd.bookings;
 ```
+The DELETE statement does what it says on the tin: deletes rows from the table. Here, we show the command in its simplest form, with no qualifiers. In this case, it deletes everything from the table. Obviously, you should be careful with your deletes and make sure they're always limited - we'll see how to do that in the next exercise.
+
+An alternative to unqualified DELETEs is the following:
+```sql
+truncate cd.bookings;
+```
+TRUNCATE also deletes everything in the table, but does so using a quicker underlying mechanism. It's not perfectly safe in all circumstances, though, so use judiciously. When in doubt, use DELETE.
 
 Question :   
 We want to remove member 37, who has never made a booking, from our database. How can we achieve that?    
 ```sql
 delete from cd.members where memid = 37;
-DELETE 1
 ```
 
 Question :   
 In our previous exercises, we deleted a specific member who had never made a booking. How can we make that more general, to delete all members who have never made a booking?   
 ```sql
 delete from cd.members where memid not in (select memid from cd.bookings);
-DELETE 0
 ```
 
 
@@ -454,16 +484,16 @@ order by recommendedby;
 Question :   
 Produce a list of the total number of slots booked per facility. For now, just produce an output table consisting of facility id and slots, sorted by facility id.    
 ```sql
-select facid, sum(slots)
+select facid, sum(slots) as "Total Slots"
 from cd.bookings
 group by facid
-sort by facid;
+order by facid;
 ```
 
 Question :   
 Produce a list of the total number of slots booked per facility in the month of September 2012. Produce an output table consisting of facility id and slots, sorted by the number of slots.    
 ```sql
-select facid, sum(slots)
+select facid, sum(slots) as "Total Slots"
 from cd.bookings
 where starttime >= '2012-09-01' and starttime < '2012-10-01'
 group by facid
@@ -473,11 +503,13 @@ order by sum(slots);
 Question :   
 Produce a list of the total number of slots booked per facility per month in the year of 2012. Produce an output table consisting of facility id and slots, sorted by the id and month.    
 ```sql
-select facid, sum(slots), extract(month from starttime) as mth
+select facid, extract(month from starttime) as month, sum(slots) as "Total Slots"
 from cd.bookings
-where extract(year from starttime) = 2012
-group by mth, facid
-order by facid, mth;
+where
+	starttime >= '2012-01-01'
+	and starttime < '2013-01-01'
+group by facid, month
+order by facid, month;
 ```
 
 Question :   
@@ -491,7 +523,7 @@ from cd.bookings;
 Question :   
 Produce a list of facilities with more than 1000 slots booked. Produce an output table consisting of facility id and hours, sorted by facility id.    
 ```sql
-select facid, sum(slots)
+select facid, sum(slots) as "Total Slots"
 from cd.bookings
 group by facid
 having sum(slots) > 1000
@@ -504,59 +536,82 @@ When you encounter `ERROR:  aggregate functions are not allowed in WHERE`, the f
 Question :   
 Produce a list of facilities along with their total revenue. The output table should consist of facility name and revenue, sorted by revenue. Remember that there's a different cost for guests and members!    
 ```sql
-select facilities.name, sum(slots*case when memid = 0 then facilities.guestcost else facilities.membercost end) as TotalMoney
-from cd.bookings
-inner join cd.facilities on bookings.facid = facilities.facid
-group by facilities.name
-order by TotalMoney;
+select facs.name, sum(slots*case 
+		      when memid = 0 then facs.guestcost 
+		      else facs.membercost end) as revenue
+from cd.bookings bks
+inner join cd.facilities facs
+	on bks.facid = facs.facid
+group by facs.name
+order by revenue;
 ```
 
 Question :   
 Produce a list of facilities with a total revenue less than 1000. Produce an output table consisting of facility name and revenue, sorted by revenue. Remember that there's a different cost for guests and members!    
 ```sql
-select name, totalrevenue from 
-(
-select facilities.name, 
-sum(case when memid = 0 then slots * facilities.guestcost else slots * membercost end) as totalrevenue
-from cd.bookings
-inner join cd.facilities 
-on cd.bookings.facid = cd.facilities.facid
-group by facilities.name
-)
-as selected_facilities where totalrevenue <= 1000
-order by totalrevenue;
+select name, revenue from (
+	select facs.name, sum(case 
+				when memid = 0 then slots * facs.guestcost
+				else slots * membercost
+			end) as revenue
+		from cd.bookings bks
+		inner join cd.facilities facs
+			on bks.facid = facs.facid
+		group by facs.name
+	) as agg where revenue < 1000
+order by revenue;
 ```
 One would try to just use the directly previous statement, plus the `HAVING` function! Well, this doesn't work, as the `HAVING` does not support column names.
 
+
 Question :   
  Output the facility id that has the highest number of slots booked. For bonus points, try a version without a LIMIT clause. This version will probably look messy!   
-
 ```sql
-select facid, sum(slots)
-from cd.bookings group by facid
+select facid, sum(slots) as "Total Slots"
+	from cd.bookings
+	group by facid
 order by sum(slots) desc
-limit 2;
+LIMIT 1; 
 ```
-I couldn't get `TOP` to work, but I didn't look more into it.
 
 Question :   
-
 Produce a list of the total number of slots booked per facility per month in the year of 2012. In this version, include output rows containing totals for all months per facility, and a total for all months for all facilities. The output table should consist of facility id, month and slots, sorted by the id and month. When calculating the aggregated values for all months and all facids, return null values in the month and facid columns.    
-
 ```sql
-select facid, extract(month from starttime) as month, sum(slots)
-from cd.bookings
-where starttime >= '2012-01-01'
-and starttime <= '2013-01-01'
-group by rollup(facid, month)
-order by facid, month;
+select facid, extract(month from starttime) as month, sum(slots) as slots
+	from cd.bookings
+	where
+		starttime >= '2012-01-01'
+		and starttime < '2013-01-01'
+	group by rollup(facid, month)
+order by facid, month; 
 ```
 
 Question :   
 Produce a list of the total number of hours booked per facility, remembering that a slot lasts half an hour. The output table should consist of the facility id, name, and hours booked, sorted by facility id. Try formatting the hours to two decimal places.    
 
 ```sql
+select facs.facid, facs.name,
+	trim(to_char(sum(bks.slots)/2.0, '9999999999999999D99')) as "Total Hours"
+
+	from cd.bookings bks
+	inner join cd.facilities facs
+		on facs.facid = bks.facid
+	group by facs.facid, facs.name
+order by facs.facid;
 ```
+
+Question
+Produce a list of each member name, id, and their first booking after September 1st 2012. Order by member ID.
+```sql
+select mems.surname, mems.firstname, mems.memid, min(bks.starttime) as starttime
+	from cd.bookings bks
+	inner join cd.members mems on
+		mems.memid = bks.memid
+	where starttime >= '2012-09-01'
+	group by mems.surname, mems.firstname, mems.memid
+order by mems.memid;
+```
+
 
 
 
